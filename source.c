@@ -25,16 +25,17 @@
 #define DIS_HEIGH  	0x40
 
 
+
 uint8_t DDRAM[8][128];
 uint8_t curX, curY;
 
-//funkce pro naplneni pole nulama
+
 void DDRAM_Init(){
 	memset(DDRAM,0,sizeof(DDRAM));
 }
 
 void DDRAM_Fill(){
-	memset(DDRAM,1,sizeof(DDRAM));
+	memset(DDRAM,0xff,sizeof(DDRAM));
 }
 
 //funkce pro zapis pixelu do pole, tuto funkci upravit, pridat parametr pro 0,1
@@ -52,21 +53,29 @@ void DDRAM_Wr(uint8_t x, uint8_t y, uint8_t bit){
 	}
 }
 
-/*funkce pro cteni dat na displeji(v pameti), promenou curY nasobim 8 abych se dostal
- * vzdy na zacatek strankove radky, pak prochazim vsech 8bitu a zapisuju vsechny aktivni pixely co uz tam jsou
- * vcetne toho aktualniho
- *vyraz j%8 je tam proto abych zapisoval presne polohy pixelu na danem radku, promenou temp vratim a vyslu na displej
- *
- */
-uint8_t DDRAM_Read(){
 
-	uint8_t temp=0;
+uint8_t DDRAM_Read(uint8_t bit){
+
+	uint8_t temp= (bit) ? 0 : 255;
 	uint8_t krok=curY * 8;
 
 	for(uint8_t maska= krok; maska < krok + 8; maska++){
 
-		if (DDRAM[curY][curX] & (1 << maska % 8))
-			temp |= (1 << maska % 8);
+		switch(bit){
+
+		case 1:
+			if (DDRAM[curY][curX] & (1 << maska % 8))
+				temp |= (1 << maska % 8);
+		break;
+
+		case 0:
+			if (!(DDRAM[curY][curX] & (1 << maska % 8)))
+				temp &= ~(1 << maska % 8);
+		break;
+
+		default:
+		break;
+		}
 	}
 	return temp;
 
@@ -93,15 +102,15 @@ void GLCD_Init(){
 
 
 //funkce pro mazani obrazovky
-void GLCD_ClearScreen(){
+void GLCD_ClearScreen(uint8_t sirka){
 
 	uint8_t i,j;
 
 	for(i=0;i<64;i+=8){
 
-		GLCD_GoTo(0, i/8);
+		GLCD_GoTo(0, i);
 
-		for(j=0;j<128;j++){
+		for(j=0;j < sirka;j++){
 
 			GLCD_WrDat(0x00);
 		}
@@ -114,7 +123,7 @@ void GLCD_FillScreen(){
 
 	for(i=0;i<64;i+=8){
 
-		GLCD_GoTo(0, i/8);
+		GLCD_GoTo(0, i);
 
 		for(j=0;j<128;j++){
 
@@ -129,20 +138,21 @@ void GLCD_FillScreen_Ddram(){
 }
 
 void GLCD_ClearScreen_Ddram(){
-	GLCD_ClearScreen();
+	GLCD_ClearScreen(128);
 	DDRAM_Init();
 }
 
 //funkce pro zapis pozadovane polohy do radicu
-void GLCD_GoTo(uint8_t x, uint8_t y){
+void GLCD_GoTo(uint8_t col, uint8_t row){
 
-	curX=x;
-	curY=y;
+	curX=col;
+	curY=row / 8;
+
 	//cyklus init radicu
 	for(int i=0;i<2;i++){
 
 		GLCD_WrCmd(SET_X | 0, i);
-		GLCD_WrCmd(SET_Y | y, i);
+		GLCD_WrCmd(SET_Y | curY, i);
 		GLCD_WrCmd(START_LINE | 0, i);
 	}
 
@@ -151,8 +161,8 @@ void GLCD_GoTo(uint8_t x, uint8_t y){
 	 *
 	 *
 	 */
-	GLCD_WrCmd(SET_X | (x % 64), (x / 64 ));
-	GLCD_WrCmd(SET_Y | y, (x / 64 ));
+	GLCD_WrCmd(SET_X | (curX % 64), (curX / 64 ));
+	GLCD_WrCmd(SET_Y | curY, (curX / 64 ));
 
 }
 
@@ -162,8 +172,8 @@ void GLCD_SetPixel(uint8_t x, uint8_t y, uint8_t bit){
 
 	uint8_t temp=0;
 	DDRAM_Wr(y, x, bit);
-	GLCD_GoTo(x, y/8);
-	temp=DDRAM_Read();
+	GLCD_GoTo(x, y);
+	temp=DDRAM_Read(bit);
 	GLCD_WrDat(temp);
 
 }
@@ -172,8 +182,8 @@ void GLCD_ClearPixel(uint8_t x, uint8_t y, uint8_t bit){
 
 	uint8_t temp=0;
 	DDRAM_Wr(y,x,bit);
-	GLCD_GoTo(x, y/8);
-	temp=DDRAM_Read();
+	GLCD_GoTo(x, y);
+	temp=DDRAM_Read(bit);
 	//cekej(20);
 	GLCD_WrDat(temp);
 }
@@ -420,6 +430,7 @@ void Pin_Init(){
 	PTC->PCOR = CLK;
 
 	PTA->PDDR |= RST;
+	//PTA->PCOR = RST;    //vypnuti resetu
 	PTA->PSOR = RST;    //vypnuti resetu
 
 	PTE->PDDR |= DAT;
@@ -613,21 +624,23 @@ unsigned char GLCD_ReadByteFromROMMemory(char * ptr){
  * funkci ReadByte..(), ktera vrati polozku v poli font[] a to dam jako parametr funkci WrDat()
  *
  */
-void GLCD_WrChar(char charToWrite){
+void GLCD_WrChar(char charToWrite, uint8_t barva){
 
 	int i;
 	charToWrite -= 32;
 
-	for(i = 0; i < 5; i++)
-		GLCD_WrDat(GLCD_ReadByteFromROMMemory((char *)((int)font + (5 * charToWrite) + i)));
-
-	GLCD_WrDat(0x00);
+	for(i = 0; i < 5; i++){
+		if(barva) GLCD_WrDat(GLCD_ReadByteFromROMMemory((char *)((int)font + (5 * charToWrite) + i)));
+		else GLCD_WrDat(~GLCD_ReadByteFromROMMemory((char *)((int)font + (5 * charToWrite) + i)));
+	}
+	if (barva)GLCD_WrDat(0x00);
+	else GLCD_WrDat(0xff);
 }
 
-void GLCD_WrString(char *str){
+void GLCD_WrString(char *str, uint8_t barva){
 
 	while(*str){
-		GLCD_WrChar(*str++);
+		GLCD_WrChar(*str++, barva);
 
 	}
 }
