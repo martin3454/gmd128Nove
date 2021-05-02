@@ -54,9 +54,9 @@ void DDRAM_Wr(uint8_t x, uint8_t y, uint8_t bit){
 }
 
 
-uint8_t DDRAM_Read(uint8_t bit){
+uint8_t DDRAM_Read(){
 
-	uint8_t temp= (bit) ? 0 : 255;
+	/*uint8_t temp= (bit) ? 0 : 255;
 	uint8_t krok=curY * 8;
 
 	for(uint8_t maska= krok; maska < krok + 8; maska++){
@@ -76,13 +76,15 @@ uint8_t DDRAM_Read(uint8_t bit){
 		default:
 		break;
 		}
-	}
-	return temp;
+	}*/
+	return DDRAM[curY][curX];
 
 }
 
 //incializace a zapnuti displeje
 void GLCD_Init(){
+
+	Pin_Init();
 
 	GLCD_WrCmd(DIS_ON, 0);
 	GLCD_WrCmd(SET_X, 0);
@@ -98,11 +100,13 @@ void GLCD_Init(){
 
 	DDRAM_Init();
 	curX=curY=0;
+
+	GLCD_ClearScreen(128);
 }
 
 
 //funkce pro mazani obrazovky
-void GLCD_ClearScreen(uint8_t sirka){
+void GLCD_ClearScreen(){
 
 	uint8_t i,j;
 
@@ -110,7 +114,7 @@ void GLCD_ClearScreen(uint8_t sirka){
 
 		GLCD_GoTo(0, i);
 
-		for(j=0;j < sirka;j++){
+		for(j=0;j < 128;j++){
 
 			GLCD_WrDat(0x00);
 		}
@@ -125,7 +129,7 @@ void GLCD_FillScreen(){
 
 		GLCD_GoTo(0, i);
 
-		for(j=0;j<128;j++){
+		for(j=0;j < 128;j++){
 
 			GLCD_WrDat(0xff);
 		}
@@ -145,10 +149,11 @@ void GLCD_ClearScreen_Ddram(){
 //funkce pro zapis pozadovane polohy do radicu
 void GLCD_GoTo(uint8_t col, uint8_t row){
 
-	curX=col;
+	curX=col;				//nastaveni globalnich promennych na aktualni soradnice
 	curY=row / 8;
 
-	//cyklus init radicu
+	//cyklus init radicu, toto je pro pripad ze se prechazi ze 63 pozice na 64 na displeji
+	//je proste potreba predem nastavit radice pro pozadovanou pozici, jinak se data nezobrazi nebo zobrazi spatne
 	for(int i=0;i<2;i++){
 
 		GLCD_WrCmd(SET_X | 0, i);
@@ -156,13 +161,11 @@ void GLCD_GoTo(uint8_t col, uint8_t row){
 		GLCD_WrCmd(START_LINE | 0, i);
 	}
 
-	/*tady probiha zapis pozadovane polohy do radkoveho a strankove radice
-	 * vyber radice je podle podilu x/64 je to bud 0,1
-	 *
-	 *
-	 */
+	//tady probiha zapis pozadovane polohy do radkoveho a strankove radice
+	//vyber radice je podle podilu x/64 je to bud 0,1
 	GLCD_WrCmd(SET_X | (curX % 64), (curX / 64 ));
 	GLCD_WrCmd(SET_Y | curY, (curX / 64 ));
+
 
 }
 
@@ -173,23 +176,14 @@ void GLCD_SetPixel(uint8_t x, uint8_t y, uint8_t bit){
 	uint8_t temp=0;
 	DDRAM_Wr(y, x, bit);
 	GLCD_GoTo(x, y);
-	temp=DDRAM_Read(bit);
+	temp=DDRAM_Read();
 	GLCD_WrDat(temp);
 
 }
 
-void GLCD_ClearPixel(uint8_t x, uint8_t y, uint8_t bit){
-
-	uint8_t temp=0;
-	DDRAM_Wr(y,x,bit);
-	GLCD_GoTo(x, y);
-	temp=DDRAM_Read(bit);
-	//cekej(20);
-	GLCD_WrDat(temp);
-}
 
 //vykresleni primky odvozeno od Bresenhamova algoritmu
-void Draw_Line(uint8_t x1, uint8_t y1, uint8_t x2, uint8_t y2, uint8_t barva){
+void Primka(uint8_t x1, uint8_t y1, uint8_t x2, uint8_t y2, uint8_t barva){
 
 	int dx, dy, idx, idy, px, py, x, y;
 
@@ -232,7 +226,7 @@ void Draw_Line(uint8_t x1, uint8_t y1, uint8_t x2, uint8_t y2, uint8_t barva){
 }
 
 
-void H_line(uint8_t x1, uint8_t x2, uint8_t y1, uint8_t barva){
+void H_Linka(uint8_t x1, uint8_t x2, uint8_t y1, uint8_t barva){
 
 	for(uint8_t j=x1; j<=x2; j++){
 		GLCD_SetPixel(j, y1, barva);
@@ -240,7 +234,7 @@ void H_line(uint8_t x1, uint8_t x2, uint8_t y1, uint8_t barva){
 	}
 }
 
-void V_line(uint8_t x1, uint8_t y1, uint8_t y2, uint8_t barva){
+void V_Linka(uint8_t x1, uint8_t y1, uint8_t y2, uint8_t barva){
 
 	for(uint8_t j=y1; j<=y2; j++){
 		GLCD_SetPixel(x1, j, barva);
@@ -249,7 +243,7 @@ void V_line(uint8_t x1, uint8_t y1, uint8_t y2, uint8_t barva){
 }
 
 //vykresleni obdelniku/ctverce
-void Draw_Obdelnik(uint8_t x, uint8_t y, uint8_t a, uint8_t b, uint8_t barva){
+void Obdelnik(uint8_t x, uint8_t y, uint8_t a, uint8_t b, uint8_t barva){
 
 	uint8_t j;
 	for (j = 0; j < b; j++) {
@@ -274,7 +268,7 @@ void Fill_Obdelnik(uint8_t x, uint8_t y, uint8_t a, uint8_t b, uint8_t barva){
 
 
 //funkce pro vykresleni kruhu odvozeno od Bresenhamova algoritmu
-void Draw_Circle(uint8_t x, uint8_t y, uint8_t r, uint8_t barva){
+void Kruh(uint8_t x, uint8_t y, uint8_t r, uint8_t barva){
 
 	int xx, yy, xc, yc, re;
 	xx=r;
@@ -308,7 +302,7 @@ void Draw_Circle(uint8_t x, uint8_t y, uint8_t r, uint8_t barva){
 
 
 //vykresleni plneho kruhu
-void Fill_Circle(uint8_t x1, uint8_t y1, uint8_t r, uint8_t barva){
+void Fill_Kruh(uint8_t x1, uint8_t y1, uint8_t r, uint8_t barva){
 	for(int y=-r; y<=r; y++){
 		for(int x=-r; x<=r; x++){
 			if(x*x + y*y <=r*r) GLCD_SetPixel(x1+x, y1+y, barva);
@@ -321,7 +315,6 @@ void Fill_Circle(uint8_t x1, uint8_t y1, uint8_t r, uint8_t barva){
 //funkce pro zapis prikazu do radice v parametru control
 void GLCD_WrCmd(uint8_t cmd, uint8_t control){
 
-	//cekej(1);
 	SR_Write_Data(cmd);
 	//cekej(10);
 	GLCD_RS_L();
@@ -337,7 +330,6 @@ void GLCD_WrCmd(uint8_t cmd, uint8_t control){
 //funkce pro zapis dat do radice na zaklade aktualniho kurzoru
 void GLCD_WrDat(uint8_t dat){
 
-	//cekej(1);
 	SR_Write_Data(dat);
 	//cekej(10);
 	GLCD_RS_H();
@@ -367,11 +359,6 @@ void GLCD_DisableControler(uint8_t control){
 	break;
 	}
 }
-
-uint8_t GLCD_Active_Controller(){
-	return (curX / 64);
-}
-
 
 // DATA SIGNAL
 void GLCD_RS_H(){
@@ -501,8 +488,6 @@ void SR_H(){
 }
 
 
-
-
 //ZNAKOVA SADA A FUNKCE
 
 const unsigned char font []= {
@@ -605,8 +590,6 @@ const unsigned char font []= {
 };
 
 
-
-
 /*Funkce pro praci se znaky, znakova sada neni kompletni, jsou zde jen zakladni pismena, cisla a znaky
  *	zacina od hodnoty 32 v ascii tabulce, je tady 96 znaku namapovanych
 */
@@ -645,7 +628,47 @@ void GLCD_WrString(char *str, uint8_t barva){
 	}
 }
 
+void BitMap_Print(int *bitmap, int delka){
 
+	GLCD_GoTo(0,0);
+	uint8_t col = 0;
+	uint8_t row = 0;
+	for(int i=0; i < delka; i++ ){
+
+		GLCD_WrDat(bitmap[i]);
+		if(++col >= 127){
+			col = 0;
+			row += 8;
+			GLCD_GoTo(0,row);
+		}
+	}
+
+}
+
+void Start_screen(){
+
+	Fill_Obdelnik(5,1,10,5, 1);
+	Fill_Obdelnik(5,5,5,10, 1);
+	Fill_Obdelnik(5,14,5,10, 1);
+	Fill_Obdelnik(5,23,10,5, 1);
+
+	GLCD_GoTo(18, 22);
+	GLCD_WrString("ORTEX-", 1);
+	V_line(55,1,28, 1);
+	Primka(55, 1, 65, 10, 1);
+	Primka(65, 10, 75, 1, 1);
+	V_line(75,1,28, 1);
+
+	Fill_Kruh(93,16,15, 1);
+
+	Fill_Obdelnik(110,16,10,2, 1);
+	Fill_Obdelnik(114,12,2,10, 1);
+
+	Fill_Obdelnik(0,35,127,28, 1);
+	GLCD_GoTo(25,45);
+	GLCD_WrString("**UTB Zlin**",0);
+
+}
 
 
 
